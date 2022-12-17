@@ -68,10 +68,6 @@ Inductive expr :=
   | Pair (e1 e2 : expr)
   | Fst (e : expr)
   | Snd (e : expr)
-  (* Sums *)
-  | InjL (e : expr)
-  | InjR (e : expr)
-  | Case (e0 : expr) (e1 : expr) (e2 : expr)
   (* Heap *)
   | AllocN (e1 e2 : expr) (* array length (positive number), initial value *)
   | Free (e : expr)
@@ -80,9 +76,7 @@ Inductive expr :=
 with val :=
   | LitV (l : base_lit)
   | RecV (f x : binder) (e : expr)
-  | PairV (v1 v2 : val)
-  | InjLV (v : val)
-  | InjRV (v : val).
+  | PairV (v1 v2 : val).
 
 Bind Scope expr_scope with expr.
 Bind Scope val_scope with val.
@@ -137,8 +131,6 @@ Definition lit_is_unboxed (l: base_lit) : Prop :=
 Definition val_is_unboxed (v : val) : Prop :=
   match v with
   | LitV l         => lit_is_unboxed l
-  | InjLV (LitV l) => lit_is_unboxed l
-  | InjRV (LitV l) => lit_is_unboxed l
   | _              => False
   end.
 
@@ -151,7 +143,7 @@ Defined.
 
 Global Instance val_is_unboxed_dec v : Decision (val_is_unboxed v).
 Proof. 
-  destruct v as [ | | | [] | [] ]; 
+  destruct v; 
   simpl; 
   exact (decide _). 
 Defined.
@@ -209,9 +201,6 @@ Proof.
      | Pair e1 e2, Pair e1' e2'        => cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
      | Fst e, Fst e'                   => cast_if (decide (e = e'))
      | Snd e, Snd e'                   => cast_if (decide (e = e'))
-     | InjL e, InjL e'                 => cast_if (decide (e = e'))
-     | InjR e, InjR e'                 => cast_if (decide (e = e'))
-     | Case e0 e1 e2, Case e0' e1' e2' => cast_if_and3 (decide (e0 = e0')) (decide (e1 = e1')) (decide (e2 = e2'))
      | AllocN e1 e2, AllocN e1' e2'    => cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
      | Free e, Free e'                 => cast_if (decide (e = e'))
      | Load e, Load e'                 => cast_if (decide (e = e'))
@@ -223,8 +212,6 @@ Proof.
      | LitV l, LitV l'            => cast_if (decide (l = l'))
      | RecV f x e, RecV f' x' e'  => cast_if_and3 (decide (f = f')) (decide (x = x')) (decide (e = e'))
      | PairV e1 e2, PairV e1' e2' => cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
-     | InjLV e, InjLV e'          => cast_if (decide (e = e'))
-     | InjRV e, InjRV e'          => cast_if (decide (e = e'))
      | _, _                       => right _
      end
    for go); try (clear go gov; abstract intuition congruence).
@@ -259,9 +246,6 @@ Inductive ectx_item :=
   | PairRCtx (e1 : expr)
   | FstCtx
   | SndCtx
-  | InjLCtx
-  | InjRCtx
-  | CaseCtx (e1 : expr) (e2 : expr)
   | AllocNLCtx (v2 : val)
   | AllocNRCtx (e1 : expr)
   | FreeCtx
@@ -288,9 +272,6 @@ Fixpoint fill_item (Ki : ectx_item) (e : expr) : expr :=
   | PairRCtx e1     => Pair e1 e
   | FstCtx          => Fst e
   | SndCtx          => Snd e
-  | InjLCtx         => InjL e
-  | InjRCtx         => InjR e
-  | CaseCtx e1 e2   => Case e e1 e2
   | AllocNLCtx v2   => AllocN e (Val v2)
   | AllocNRCtx e1   => AllocN e1 e
   | FreeCtx         => Free e
@@ -312,9 +293,6 @@ Fixpoint subst (x : string) (v : val) (e : expr)  : expr :=
   | Pair e1 e2     => Pair (subst x v e1) (subst x v e2)
   | Fst e          => Fst (subst x v e)
   | Snd e          => Snd (subst x v e)
-  | InjL e         => InjL (subst x v e)
-  | InjR e         => InjR (subst x v e)
-  | Case e0 e1 e2  => Case (subst x v e0) (subst x v e1) (subst x v e2)
   | AllocN e1 e2   => AllocN (subst x v e1) (subst x v e2)
   | Free e         => Free (subst x v e)
   | Load e         => Load (subst x v e)
@@ -447,10 +425,6 @@ Inductive head_step : expr → state → list observation → expr → state →
      head_step (Rec f x e) σ [] (Val $ RecV f x e) σ []
   | PairS v1 v2 σ :
      head_step (Pair (Val v1) (Val v2)) σ [] (Val $ PairV v1 v2) σ []
-  | InjLS v σ :
-     head_step (InjL $ Val v) σ [] (Val $ InjLV v) σ []
-  | InjRS v σ :
-     head_step (InjR $ Val v) σ [] (Val $ InjRV v) σ []
   | BetaS f x e1 v2 e' σ :
      e' = subst' x v2 (subst' f (RecV f x e1) e1) →
      head_step (App (Val $ RecV f x e1) (Val v2)) σ [] e' σ []
@@ -468,10 +442,6 @@ Inductive head_step : expr → state → list observation → expr → state →
      head_step (Fst (Val $ PairV v1 v2)) σ [] (Val v1) σ []
   | SndS v1 v2 σ :
      head_step (Snd (Val $ PairV v1 v2)) σ [] (Val v2) σ []
-  | CaseLS v e1 e2 σ :
-     head_step (Case (Val $ InjLV v) e1 e2) σ [] (App e1 (Val v)) σ []
-  | CaseRS v e1 e2 σ :
-     head_step (Case (Val $ InjRV v) e1 e2) σ [] (App e2 (Val v)) σ []
   | AllocNS n v σ l :
      (0 < n)%Z →
      (∀ i, (0 ≤ i)%Z → (i < n)%Z → σ.(heap) !! (l +ₗ i) = None) →
