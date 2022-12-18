@@ -65,19 +65,21 @@ Inductive expr :=
   | BinOp (op : bin_op) (e1 e2 : expr)
   | If (e0 e1 e2 : expr)
   (* Products *)
-  | Pair (e1 e2 : expr)
+  (* a ref pair is our equivalent of a ref struct, as a struct is just a product type with named fields, otherwise it's just a struct? *)
+  | Pair (is_ref: bool) (e1 e2 : expr)
   | Fst (e : expr)
   | Snd (e : expr)
+  | Ref (e: expr)
   (* Heap *)
+  (* we take a heap allocated pair to be our equivalent of class *)
   | AllocN (e1 e2 : expr) (* array length (positive number), initial value *)
   | Free (e : expr)
   | Load (e : expr)
   | Store (e1 : expr) (e2 : expr)
 with val :=
   | LitV (l : base_lit)
-  | RefV (v: val)
   | RecV (f x : binder) (e : expr)
-  | PairV (v1 v2 : val).
+  | PairV (is_ref : bool) (v1 v2 : val).
 
 Bind Scope expr_scope with expr.
 Bind Scope val_scope with val.
@@ -128,14 +130,16 @@ Definition lit_is_unboxed (l: base_lit) : Prop :=
   considering them boxed. *)
   | LitInt _ | LitBool _  | LitLoc _ | LitUnit => True
   end.
+
 Definition val_is_unboxed (v : val) : Prop :=
   match v with
   | LitV l         => lit_is_unboxed l
   | _              => False
   end.
-Definition val_is_ref (v : val) : Prop :=
-  match v with 
-  | RefV v => True
+
+Definition expr_is_ref (e : expr) : Prop :=
+  match e with 
+  | Ref _  => True
   | _      => False
   end.
 
@@ -153,7 +157,7 @@ Proof.
   exact (decide _). 
 Defined.
 
-Global Instance val_is_ref_dec v : Decision (val_is_ref v).
+Global Instance expr_is_ref_dec v : Decision (expr_is_ref v).
 Proof.
   destruct v;
   simpl;
@@ -210,22 +214,22 @@ Proof.
      | UnOp o e, UnOp o' e'            => cast_if_and (decide (o = o')) (decide (e = e')) 
      | BinOp o e1 e2, BinOp o' e1' e2' => cast_if_and3 (decide (o = o')) (decide (e1 = e1')) (decide (e2 = e2'))
      | If e0 e1 e2, If e0' e1' e2'     => cast_if_and3 (decide (e0 = e0')) (decide (e1 = e1')) (decide (e2 = e2'))
-     | Pair e1 e2, Pair e1' e2'        => cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
+     | Pair r e1 e2, Pair r' e1' e2'   => cast_if_and3 (decide (r = r')) (decide (e1 = e1')) (decide (e2 = e2'))
      | Fst e, Fst e'                   => cast_if (decide (e = e'))
      | Snd e, Snd e'                   => cast_if (decide (e = e'))
      | AllocN e1 e2, AllocN e1' e2'    => cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
      | Free e, Free e'                 => cast_if (decide (e = e'))
      | Load e, Load e'                 => cast_if (decide (e = e'))
      | Store e1 e2, Store e1' e2'      => cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
+     | Ref e, Ref e'                   => cast_if (decide (e = e'))
      | _, _                            => right _
      end
    with gov (v1 v2 : val) {struct v1} : Decision (v1 = v2) :=
      match v1, v2 with
-     | LitV l, LitV l'            => cast_if (decide (l = l'))
+     | LitV l, LitV l'                 => cast_if (decide (l = l'))
      | RecV f x e, RecV f' x' e'  => cast_if_and3 (decide (f = f')) (decide (x = x')) (decide (e = e'))
-     | PairV e1 e2, PairV e1' e2' => cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
-     | RefV v1, RefV v2           => cast_if (decide (v1 = v2))
-     | _, _                       => right _
+     | PairV r e1 e2, PairV r' e1' e2' => cast_if_and3 (decide (r = r')) (decide (e1 = e1')) (decide (e2 = e2'))
+     | _, _                            => right _
      end
    for go); try (clear go gov; abstract intuition congruence).
 Defined.
@@ -250,8 +254,8 @@ Inductive ectx_item :=
   | BinOpLCtx (op : bin_op) (v2 : val)
   | BinOpRCtx (op : bin_op) (e1 : expr)
   | IfCtx (e1 e2 : expr)
-  | PairLCtx (v2 : val)
-  | PairRCtx (e1 : expr)
+  | PairLCtx (is_ref : bool) (v2 : val)
+  | PairRCtx (is_ref : bool) (e1 : expr)
   | FstCtx
   | SndCtx
   | AllocNLCtx (v2 : val)
@@ -276,8 +280,8 @@ Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   | BinOpLCtx op v2 => BinOp op e (Val v2)
   | BinOpRCtx op e1 => BinOp op e1 e
   | IfCtx e1 e2     => If e e1 e2
-  | PairLCtx v2     => Pair e (Val v2)
-  | PairRCtx e1     => Pair e1 e
+  | PairLCtx r v2   => Pair r e (Val v2)
+  | PairRCtx r e1   => Pair r e1 e
   | FstCtx          => Fst e
   | SndCtx          => Snd e
   | AllocNLCtx v2   => AllocN e (Val v2)
@@ -298,13 +302,14 @@ Fixpoint subst (x : string) (v : val) (e : expr)  : expr :=
   | UnOp op e      => UnOp op (subst x v e)
   | BinOp op e1 e2 => BinOp op (subst x v e1) (subst x v e2)
   | If e0 e1 e2    => If (subst x v e0) (subst x v e1) (subst x v e2)
-  | Pair e1 e2     => Pair (subst x v e1) (subst x v e2)
+  | Pair r e1 e2   => Pair r (subst x v e1) (subst x v e2)
   | Fst e          => Fst (subst x v e)
   | Snd e          => Snd (subst x v e)
   | AllocN e1 e2   => AllocN (subst x v e1) (subst x v e2)
   | Free e         => Free (subst x v e)
   | Load e         => Load (subst x v e)
   | Store e1 e2    => Store (subst x v e1) (subst x v e2)
+  | Ref e          => Ref (subst x v e)
   end.
 
 Definition subst' (mx : binder) (v : val) : expr → expr :=
@@ -431,8 +436,8 @@ Qed.
 Inductive head_step : expr → state → list observation → expr → state → list expr → Prop :=
   | RecS f x e σ :
      head_step (Rec f x e) σ [] (Val $ RecV f x e) σ []
-  | PairS v1 v2 σ :
-     head_step (Pair (Val v1) (Val v2)) σ [] (Val $ PairV v1 v2) σ []
+  | PairS r v1 v2 σ :
+     head_step (Pair r (Val v1) (Val v2)) σ [] (Val $ PairV r v1 v2) σ []
   | BetaS f x e1 v2 e' σ :
      e' = subst' x v2 (subst' f (RecV f x e1) e1) →
      head_step (App (Val $ RecV f x e1) (Val v2)) σ [] e' σ []
@@ -446,10 +451,10 @@ Inductive head_step : expr → state → list observation → expr → state →
      head_step (If (Val $ LitV $ LitBool true) e1 e2) σ [] e1 σ []
   | IfFalseS e1 e2 σ :
      head_step (If (Val $ LitV $ LitBool false) e1 e2) σ [] e2 σ []
-  | FstS v1 v2 σ :
-     head_step (Fst (Val $ PairV v1 v2)) σ [] (Val v1) σ []
-  | SndS v1 v2 σ :
-     head_step (Snd (Val $ PairV v1 v2)) σ [] (Val v2) σ []
+  | FstS r v1 v2 σ :
+     head_step (Fst (Val $ PairV r v1 v2)) σ [] (Val v1) σ []
+  | SndS r v1 v2 σ :
+     head_step (Snd (Val $ PairV r v1 v2)) σ [] (Val v2) σ []
   | AllocNS n v σ l :
      (0 < n)%Z →
      (∀ i, (0 ≤ i)%Z → (i < n)%Z → σ.(heap) !! (l +ₗ i) = None) →
