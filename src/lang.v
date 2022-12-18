@@ -39,8 +39,8 @@ with anything. This is useful for erasure proofs: if we erased things to unit,
 behavior. So we erase to the poison value instead, making sure that no legal
 comparisons could be affected. *)
 Inductive base_lit : Set :=
-  | LitInt (n : Z) | LitBool (b : bool) | LitUnit | LitPoison
-  | LitLoc (l : loc) | LitProphecy (p: proph_id).
+  | LitInt (n : Z) | LitBool (b : bool) | LitUnit
+  | LitLoc (l : loc).
 Inductive un_op : Set :=
   | NegOp | MinusUnOp.
 Inductive bin_op : Set :=
@@ -75,6 +75,7 @@ Inductive expr :=
   | Store (e1 : expr) (e2 : expr)
 with val :=
   | LitV (l : base_lit)
+  | RefV (v: val)
   | RecV (f x : binder) (e : expr)
   | PairV (v1 v2 : val).
 
@@ -125,13 +126,17 @@ Definition lit_is_unboxed (l: base_lit) : Prop :=
   match l with
   (** Disallow comparing (erased) prophecies with (erased) prophecies, by
   considering them boxed. *)
-  | LitProphecy _ | LitPoison => False
   | LitInt _ | LitBool _  | LitLoc _ | LitUnit => True
   end.
 Definition val_is_unboxed (v : val) : Prop :=
   match v with
   | LitV l         => lit_is_unboxed l
   | _              => False
+  end.
+Definition val_is_ref (v : val) : Prop :=
+  match v with 
+  | RefV v => True
+  | _      => False
   end.
 
 Global Instance lit_is_unboxed_dec l : Decision (lit_is_unboxed l).
@@ -146,6 +151,13 @@ Proof.
   destruct v; 
   simpl; 
   exact (decide _). 
+Defined.
+
+Global Instance val_is_ref_dec v : Decision (val_is_ref v).
+Proof.
+  destruct v;
+  simpl;
+  exact (decide _).
 Defined.
 
 (** We just compare the word-sized representation of two values, without looking
@@ -212,6 +224,7 @@ Proof.
      | LitV l, LitV l'            => cast_if (decide (l = l'))
      | RecV f x e, RecV f' x' e'  => cast_if_and3 (decide (f = f')) (decide (x = x')) (decide (e = e'))
      | PairV e1 e2, PairV e1' e2' => cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
+     | RefV v1, RefV v2           => cast_if (decide (v1 = v2))
      | _, _                       => right _
      end
    for go); try (clear go gov; abstract intuition congruence).
