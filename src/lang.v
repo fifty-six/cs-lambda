@@ -580,3 +580,39 @@ Proof.
   inversion 1;
   naive_solver.
 Qed.
+
+
+(* Base template *)
+
+Inductive prog_wf : expr -> Prop :=
+| expr_val    : forall v, val_wf v -> prog_wf (Val v)
+| expr_var    : forall x, prog_wf (Var x)
+| expr_rec    : forall f x e, prog_wf e -> prog_wf (Rec f x e)
+| expr_app    : forall e1 e2, prog_wf e1 -> prog_wf e2 -> prog_wf (App e1 e2)
+| expr_unop   : forall op e, prog_wf e -> prog_wf (UnOp op e)
+| expr_binop  : forall op e1 e2, prog_wf e1 -> prog_wf e2 -> prog_wf (BinOp op e1 e2)
+| expr_if     : forall e0 e1 e2, prog_wf e0 -> prog_wf e1 -> prog_wf e2 -> prog_wf (If e0 e1 e2)
+| expr_pair   : forall e1 e2, prog_wf e1 -> prog_wf e2 -> prog_wf (Pair e1 e2)
+| expr_fst    : forall e, prog_wf e -> prog_wf (Fst e) 
+| expr_snd    : forall e, prog_wf e -> prog_wf (Snd e)
+| expr_alloc  : forall e1 e2, prog_wf e1 -> prog_wf e2 -> prog_wf (AllocN e1 e2)
+| expr_free   : forall e, prog_wf e -> prog_wf (Free e)
+| expr_load   : forall e, prog_wf e -> prog_wf (Load e)
+| expr_store  : forall e1 e2, prog_wf e1 -> prog_wf e2 -> prog_wf (Store e1 e2)
+with val_wf : val -> Prop :=
+| val_lit     : forall l, val_wf (LitV l)
+| val_rec     : forall f x e, val_wf (RecV f x e)
+| val_pair    : forall v1 v2, val_wf (PairV v1 v2)
+(* | val_ref     : forall v, *).
+(* Currently dont define for RefV which means anything that contains it is not wellformed *)
+
+
+Example A : prog_wf (Load (Var "A")).
+Proof. apply expr_load. apply expr_var. Qed.
+
+Example B : ~ prog_wf (Val (RefV (PairV (LitV (LitInt 1)) (LitV (LitInt 1))))).
+Proof.
+  Admitted.
+  
+
+
