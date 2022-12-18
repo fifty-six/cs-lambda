@@ -5,6 +5,7 @@ From iris.program_logic Require Export language ectx_language ectxi_language.
 From iris.heap_lang Require Export locations.
 From iris.prelude Require Import options.
 
+
 (** cs_lambda.  
 
 A fairly simple language used for common Iris examples.
@@ -38,20 +39,17 @@ with anything. This is useful for erasure proofs: if we erased things to unit,
 [<erased> == unit] would evaluate to true after erasure, changing program
 behavior. So we erase to the poison value instead, making sure that no legal
 comparisons could be affected. *)
+
 Inductive base_lit : Set :=
   | LitInt (n : Z) | LitBool (b : bool) | LitUnit
   | LitLoc (l : loc).
 Inductive un_op : Set :=
   | NegOp | MinusUnOp.
 Inductive bin_op : Set :=
-  (** We use "quot" and "rem" instead of "div" and "mod" to
-      better match the behavior of 'real' languages:
-      e.g., in Rust, -30/-4 == 7. ("div" would return 8.) *)
-  | PlusOp | MinusOp | MultOp | QuotOp | RemOp (* Arithmetic *)
-  | AndOp | OrOp | XorOp (* Bitwise *)
-  | ShiftLOp | ShiftROp (* Shifts *)
-  | LeOp | LtOp | EqOp (* Relations *)
-  | OffsetOp. (* Pointer offset *)
+  | PlusOp
+  | AndOp
+  | EqOp
+  | OffsetOp.
 
 Inductive expr :=
   (* Values *)
@@ -327,29 +325,15 @@ Definition un_op_eval (op : un_op) (v : val) : option val :=
 Definition bin_op_eval_int (op : bin_op) (n1 n2 : Z) : option base_lit :=
   match op with
   | PlusOp   => Some $ LitInt  (n1 + n2)
-  | MinusOp  => Some $ LitInt  (n1 - n2)
-  | MultOp   => Some $ LitInt  (n1 * n2)
-  | QuotOp   => Some $ LitInt  (n1 `quot` n2)
-  | RemOp    => Some $ LitInt  (n1 `rem` n2)
   | AndOp    => Some $ LitInt  (Z.land n1 n2)
-  | OrOp     => Some $ LitInt  (Z.lor n1 n2)
-  | XorOp    => Some $ LitInt  (Z.lxor n1 n2)
-  | ShiftLOp => Some $ LitInt  (n1 ≪ n2)
-  | ShiftROp => Some $ LitInt  (n1 ≫ n2)
-  | LeOp     => Some $ LitBool (bool_decide (n1 ≤ n2))
-  | LtOp     => Some $ LitBool (bool_decide (n1 < n2))
   | EqOp     => Some $ LitBool (bool_decide (n1 = n2))
   | OffsetOp => None (* Pointer arithmetic *)
   end%Z.
 
 Definition bin_op_eval_bool (op : bin_op) (b1 b2 : bool) : option base_lit :=
   match op with
-  | PlusOp | MinusOp | MultOp | QuotOp | RemOp => None (* Arithmetic *)
+  | PlusOp              => None (* Arithmetic *)
   | AndOp               => Some (LitBool (b1 && b2))
-  | OrOp                => Some (LitBool (b1 || b2))
-  | XorOp               => Some (LitBool (xorb b1 b2))
-  | ShiftLOp | ShiftROp => None (* Shifts *)
-  | LeOp | LtOp         => None (* InEquality *)
   | EqOp                => Some (LitBool (bool_decide (b1 = b2)))
   | OffsetOp            => None (* Pointer arithmetic *)
   end.
@@ -619,5 +603,44 @@ Example B : ~ prog_wf (Val (RefV (PairV (LitV (LitInt 1)) (LitV (LitInt 1))))).
 Proof.
   Admitted.
   
+
+(* Minimal start of typing lang *)
+
+Inductive ty : Type :=
+  | Ty_Bool  : ty
+  | Ty_Int   : ty
+  | Ty_Unit  : ty
+  | Ty_Loc   : ty
+  | Ty_Arrow : ty -> ty -> ty.
+
+Inductive tm : Type :=
+  | tm_var   : string -> tm
+  | tm_app   : tm -> tm -> tm
+  | tm_abs   : string -> ty -> tm -> tm
+  | tm_true  : tm
+  | tm_false : tm
+  | tm_if    : tm -> tm -> tm -> tm.
+
+Inductive value : tm -> Prop :=
+  | v_abs : forall x T2 t1,
+      value (tm_abs x T2 t1)
+  | v_true :
+      value tm_true
+  | v_false :
+      value tm_false.
+
+      
+Reserved Notation "t '\in' T"
+            (at level 90).
+Inductive has_type : tm -> ty -> Prop :=
+  | T_Pair  : forall t1 t2 t3,
+    t1 \in Ty_Bool ->
+    
+  | T_If    : forall t1 t2 t3 T1,
+    t1 \in Ty_Bool ->
+    t2 \in T1 ->
+    t3 \in T1 ->
+    (tm_if t1 t2 t3) \in T1
+where "t '\in' T" := (has_type t T).
 
 
