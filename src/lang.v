@@ -39,7 +39,7 @@ with anything. This is useful for erasure proofs: if we erased things to unit,
 behavior. So we erase to the poison value instead, making sure that no legal
 comparisons could be affected. *)
 Inductive base_lit : Set :=
-  | LitInt (n : Z) | LitBool (b : bool) | LitUnit | LitPoison
+  | LitInt (n : Z) | LitBool (b : bool) | LitUnit
   | LitLoc (l : loc) | LitProphecy (p: proph_id).
 Inductive un_op : Set :=
   | NegOp | MinusUnOp.
@@ -125,7 +125,7 @@ Definition lit_is_unboxed (l: base_lit) : Prop :=
   match l with
   (** Disallow comparing (erased) prophecies with (erased) prophecies, by
   considering them boxed. *)
-  | LitProphecy _ | LitPoison => False
+  | LitProphecy _
   | LitInt _ | LitBool _  | LitLoc _ | LitUnit => True
   end.
 Definition val_is_unboxed (v : val) : Prop :=
@@ -224,11 +224,6 @@ Global Instance state_inhabited : Inhabited state :=
 Global Instance val_inhabited : Inhabited val := populate (LitV LitUnit).
 Global Instance expr_inhabited : Inhabited expr := populate (Val inhabitant).
 
-Canonical Structure stateO := leibnizO state.
-Canonical Structure locO := leibnizO loc.
-Canonical Structure valO := leibnizO val.
-Canonical Structure exprO := leibnizO expr.
-
 (** Evaluation contexts *)
 (** Note that [ResolveLCtx] is not by itself an evaluation context item: we do
 not reduce directly under Resolve's first argument. We only reduce things nested
@@ -260,7 +255,7 @@ no head steps (i.e., surface reductions) are taken. This means that contextual
 closure will reduce [Resolve (CmpXchg #l #n (#n + #1)) #p #v] into [Resolve
 (CmpXchg #l #n #(n+1)) #p #v], but it cannot context-step any further. *)
 
-Fixpoint fill_item (Ki : ectx_item) (e : expr) : expr :=
+Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   match Ki with
   | AppLCtx v2      => App e (of_val v2)
   | AppRCtx e1      => App e1 e
@@ -532,7 +527,6 @@ End cs_lambda.
 (** Language *)
 Canonical Structure heap_ectxi_lang := EctxiLanguage cs_lambda.cs_lambda_mixin.
 Canonical Structure heap_ectx_lang  := EctxLanguageOfEctxi heap_ectxi_lang.
-Canonical Structure cs_lambda       := LanguageOfEctx heap_ectx_lang.
 
 (* Prefer cs_lambda names over ectx_language names. *)
 Export cs_lambda.
