@@ -1,5 +1,5 @@
 From stdpp Require Export binders strings.
-From stdpp Require Import gmap.
+From stdpp Require Import fin_maps gmap.
 From iris.algebra Require Export ofe.
 From iris.program_logic Require Export language ectx_language ectxi_language.
 From iris.heap_lang Require Export locations.
@@ -55,7 +55,7 @@ Inductive expr :=
   (* Values *)
   | Val (v : val)
   (* Base lambda calculus *)
-  | Var (x : string)
+  | Var (ref: bool) (x : string)
   | Rec (f x : binder) (e : expr)
   | App (e1 e2 : expr)
   (* Base types and their operations *)
@@ -64,7 +64,7 @@ Inductive expr :=
   | If (e0 e1 e2 : expr)
   (* Products *)
   (* a ref pair is our equivalent of a ref struct, as a struct is just a product type with named fields, otherwise it's just a struct? *)
-  | Pair (is_ref: bool) (e1 e2 : expr)
+  | Pair (ref: bool) (e1 e2 : expr)
   | Fst (e : expr)
   | Snd (e : expr)
   | Ref (e: expr)
@@ -72,7 +72,7 @@ Inductive expr :=
 with val :=
   | LitV (l : base_lit)
   | RecV (f x : binder) (e : expr)
-  | PairV (is_ref : bool) (v1 v2 : val).
+  | PairV (ref : bool) (v1 v2 : val).
 
 Bind Scope expr_scope with expr.
 Bind Scope val_scope with val.
@@ -98,13 +98,17 @@ Inductive field_valid : type -> bool -> Prop :=
 
 Reserved Notation "Γ ⊢ e : τ" (at level 74, e, τ at next level).
 
-Inductive has_type (Γ: list type) : expr -> type -> Prop :=
-  | PairT is_ref e1 e2 τ1 τ2 : 
+Inductive has_type (Γ: gmap binder type) : expr -> type -> Prop :=
+  | PairT ref e1 e2 τ1 τ2 : 
       Γ ⊢ e1 : τ1 -> 
       Γ ⊢ e2 : τ2 ->
-      field_valid τ1 is_ref -> 
-      field_valid τ2 is_ref ->
-      Γ ⊢ (Pair is_ref e1 e2) : TPair is_ref τ1 τ2
+      field_valid τ1 ref -> 
+      field_valid τ2 ref ->
+      Γ ⊢ (Pair ref e1 e2) : TPair ref τ1 τ2
+  | RecT f x e τ1 τ2 : 
+      (* if giving x the type τ1 in the context resolves the expression, then the function is valid *)
+      (<[ x := τ1 ]> Γ) ⊢ e : τ2 ->
+      Γ ⊢ Rec f x e : TArrow τ1 τ2
 (* e has type tau *)
 where "Γ ⊢ e : τ" := (has_type Γ e τ).
 
@@ -164,7 +168,7 @@ Definition val_is_unboxed (v : val) : Prop :=
   | _              => False
   end.
 
-Definition expr_is_ref (e : expr) : Prop :=
+Definition expr_ref (e : expr) : Prop :=
   match e with 
   | Ref _  => True
   | _      => False
@@ -184,7 +188,7 @@ Proof.
   exact (decide _). 
 Defined.
 
-Global Instance expr_is_ref_dec v : Decision (expr_is_ref v).
+Global Instance expr_ref_dec v : Decision (expr_is_ref v).
 Proof.
   destruct v;
   simpl;
@@ -281,8 +285,8 @@ Inductive ectx_item :=
   | BinOpLCtx (op : bin_op) (v2 : val)
   | BinOpRCtx (op : bin_op) (e1 : expr)
   | IfCtx (e1 e2 : expr)
-  | PairLCtx (is_ref : bool) (v2 : val)
-  | PairRCtx (is_ref : bool) (e1 : expr)
+  | PairLCtx (ref : bool) (v2 : val)
+  | PairRCtx (ref : bool) (e1 : expr)
   | FstCtx
   | SndCtx
   | AllocNLCtx (v2 : val)
