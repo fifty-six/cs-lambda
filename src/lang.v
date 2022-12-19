@@ -41,15 +41,15 @@ behavior. So we erase to the poison value instead, making sure that no legal
 comparisons could be affected. *)
 
 Inductive base_lit : Set :=
-  | LitInt (n : Z) | LitBool (b : bool) | LitUnit
-  | LitLoc (l : loc).
+  | LitInt (n : Z) 
+  | LitBool (b : bool) 
+  | LitUnit.
 Inductive un_op : Set :=
   | NegOp | MinusUnOp.
 Inductive bin_op : Set :=
   | PlusOp
   | AndOp
-  | EqOp
-  | OffsetOp.
+  | EqOp.
 
 Inductive expr :=
   (* Values *)
@@ -68,12 +68,7 @@ Inductive expr :=
   | Fst (e : expr)
   | Snd (e : expr)
   | Ref (e: expr)
-  (* Heap *)
-  (* we take a heap allocated pair to be our equivalent of class *)
-  | AllocN (e1 e2 : expr) (* array length (positive number), initial value *)
-  | Free (e : expr)
-  | Load (e : expr)
-  | Store (e1 : expr) (e2 : expr)
+  | Class (e1 e2 : expr)
 with val :=
   | LitV (l : base_lit)
   | RecV (f x : binder) (e : expr)
@@ -81,6 +76,40 @@ with val :=
 
 Bind Scope expr_scope with expr.
 Bind Scope val_scope with val.
+
+Inductive type : Type :=
+  | TInt   : type
+  | TPair  : bool -> type -> type -> type
+  | TRef   : type -> type
+  | TArrow : type -> type -> type
+  | TUnit  : type.
+
+Inductive field_valid : type -> bool -> Prop :=
+  | FVInt   : forall (b : bool), field_valid TInt b
+  | FVUnit  : forall (b : bool), field_valid TUnit b
+  (* functions aren't really special *)
+  | FVArrow τ1 τ2: forall (b : bool), field_valid (TArrow τ1 τ2) b
+  (* non-ref pairs are fine for any type of pair, just check for nested stuff *)
+  | FVPair τ1 τ2 : forall (b : bool),
+      field_valid τ1 false -> field_valid τ2 false -> field_valid (TPair false τ1 τ2) b
+  (* provided our args are fine for a ref pair, we can have a ref pair as a field *)
+  | FVPairR τ1 τ2:
+      field_valid τ1 true -> field_valid τ2 true -> field_valid (TPair true τ1 τ2) true.
+
+Reserved Notation "Γ ⊢ e : τ" (at level 74, e, τ at next level).
+
+Inductive has_type (Γ: list type) : expr -> type -> Prop :=
+  | PairT is_ref e1 e2 τ1 τ2 : 
+      Γ ⊢ e1 : τ1 -> 
+      Γ ⊢ e2 : τ2 ->
+      field_valid τ1 is_ref -> 
+      field_valid τ2 is_ref ->
+      Γ ⊢ (Pair is_ref e1 e2) : TPair is_ref τ1 τ2
+(* e has type tau *)
+where "Γ ⊢ e : τ" := (has_type Γ e τ).
+
+(*
+
 
 (** An observation associates a prophecy variable (identifier) to a pair of
 values. The first value is the one that was returned by the (atomic) operation
@@ -570,77 +599,4 @@ Proof.
   naive_solver.
 Qed.
 
-
-(* Base template *)
-
-Inductive prog_wf : expr -> Prop :=
-| expr_val    : forall v, val_wf v -> prog_wf (Val v)
-| expr_var    : forall x, prog_wf (Var x)
-| expr_rec    : forall f x e, prog_wf e -> prog_wf (Rec f x e)
-| expr_app    : forall e1 e2, prog_wf e1 -> prog_wf e2 -> prog_wf (App e1 e2)
-| expr_unop   : forall op e, prog_wf e -> prog_wf (UnOp op e)
-| expr_binop  : forall op e1 e2, prog_wf e1 -> prog_wf e2 -> prog_wf (BinOp op e1 e2)
-| expr_if     : forall e0 e1 e2, prog_wf e0 -> prog_wf e1 -> prog_wf e2 -> prog_wf (If e0 e1 e2)
-| expr_pair   : forall e1 e2, prog_wf e1 -> prog_wf e2 -> prog_wf (Pair e1 e2)
-| expr_fst    : forall e, prog_wf e -> prog_wf (Fst e) 
-| expr_snd    : forall e, prog_wf e -> prog_wf (Snd e)
-| expr_alloc  : forall e1 e2, prog_wf e1 -> prog_wf e2 -> prog_wf (AllocN e1 e2)
-| expr_free   : forall e, prog_wf e -> prog_wf (Free e)
-| expr_load   : forall e, prog_wf e -> prog_wf (Load e)
-| expr_store  : forall e1 e2, prog_wf e1 -> prog_wf e2 -> prog_wf (Store e1 e2)
-with val_wf : val -> Prop :=
-| val_lit     : forall l, val_wf (LitV l)
-| val_rec     : forall f x e, val_wf (RecV f x e)
-| val_pair    : forall v1 v2, val_wf (PairV v1 v2)
-(* | val_ref     : forall v, *).
-(* Currently dont define for RefV which means anything that contains it is not wellformed *)
-
-
-Example A : prog_wf (Load (Var "A")).
-Proof. apply expr_load. apply expr_var. Qed.
-
-Example B : ~ prog_wf (Val (RefV (PairV (LitV (LitInt 1)) (LitV (LitInt 1))))).
-Proof.
-  Admitted.
-  
-
-(* Minimal start of typing lang *)
-
-Inductive ty : Type :=
-  | Ty_Bool  : ty
-  | Ty_Int   : ty
-  | Ty_Unit  : ty
-  | Ty_Loc   : ty
-  | Ty_Arrow : ty -> ty -> ty.
-
-Inductive tm : Type :=
-  | tm_var   : string -> tm
-  | tm_app   : tm -> tm -> tm
-  | tm_abs   : string -> ty -> tm -> tm
-  | tm_true  : tm
-  | tm_false : tm
-  | tm_if    : tm -> tm -> tm -> tm.
-
-Inductive value : tm -> Prop :=
-  | v_abs : forall x T2 t1,
-      value (tm_abs x T2 t1)
-  | v_true :
-      value tm_true
-  | v_false :
-      value tm_false.
-
-      
-Reserved Notation "t '\in' T"
-            (at level 90).
-Inductive has_type : tm -> ty -> Prop :=
-  | T_Pair  : forall t1 t2 t3,
-    t1 \in Ty_Bool ->
-    
-  | T_If    : forall t1 t2 t3 T1,
-    t1 \in Ty_Bool ->
-    t2 \in T1 ->
-    t3 \in T1 ->
-    (tm_if t1 t2 t3) \in T1
-where "t '\in' T" := (has_type t T).
-
-
+*)
