@@ -55,7 +55,7 @@ Inductive expr :=
   (* Values *)
   | Val (v : val)
   (* Base lambda calculus *)
-  | Var (ref: bool) (x : string)
+  | Var (x : string)
   | Rec (f x : binder) (e : expr)
   | App (e1 e2 : expr)
   (* Base types and their operations *)
@@ -79,11 +79,18 @@ Bind Scope val_scope with val.
 
 Inductive type : Type :=
   | TInt   : type
+  | TBool  : type
   | TPair  : bool -> type -> type -> type
+  | TClass : type -> type -> type
   | TRef   : type -> type
   | TArrow : type -> type -> type
   | TUnit  : type.
 
+(* 
+field_valid property holds if type can be used as a field in 
+  - struct/class (when bool is false) 
+  - ref struct (when bool is true) 
+*)
 Inductive field_valid : type -> bool -> Prop :=
   | FVInt   : forall (b : bool), field_valid TInt b
   | FVUnit  : forall (b : bool), field_valid TUnit b
@@ -99,16 +106,75 @@ Inductive field_valid : type -> bool -> Prop :=
 Reserved Notation "Γ ⊢ e : τ" (at level 74, e, τ at next level).
 
 Inductive has_type (Γ: gmap binder type) : expr -> type -> Prop :=
+  | IntT n : 
+      Γ ⊢ (Val (LitV (LitInt n))) : TInt
+  | BoolT b :
+      Γ ⊢ (Val (LitV (LitBool b))) : TBool
+  | UnitT :
+      Γ ⊢ (Val (LitV (LitUnit))) : TUnit
+  | RecVT f x e τ1 τ2 : 
+      (* if giving x the type τ1 in the context resolves the expression, then the function is valid *)
+      (<[ x := τ1 ]> Γ) ⊢ e : τ2 ->
+      Γ ⊢ (Val (RecV f x e)) : TArrow τ1 τ2
+  | PairVT ref v1 v2 τ1 τ2 : 
+      Γ ⊢ Val v1 : τ1 -> 
+      Γ ⊢ Val v2 : τ2 ->
+      field_valid τ1 ref -> 
+      field_valid τ2 ref ->
+      Γ ⊢ (Val (PairV ref v1 v2)) : TPair ref τ1 τ2
+  | VarT x τ1 :
+      (* x is type string but context wants binder *)
+      (lookup (BNamed x) Γ) = Some τ1 ->
+      Γ ⊢ (Var x) : τ1
+  | RecT f x e τ1 τ2 : 
+      (* if giving x the type τ1 in the context resolves the expression, then the function is valid *)
+      (<[ x := τ1 ]> Γ) ⊢ e : τ2 ->
+      Γ ⊢ Rec f x e : TArrow τ1 τ2
+  | AppT e1 e2 τ1 τ2 :
+      Γ ⊢ e1 : (TArrow τ1 τ2) ->
+      Γ ⊢ e2 : τ1 -> 
+      Γ ⊢ (App e1 e2) : τ2
+  | NegT e1 :
+      Γ ⊢ e1 : TBool ->
+      Γ ⊢ (UnOp NegOp e1) : TBool
+  | MinusT e1 :
+      Γ ⊢ e1 : TInt ->
+      Γ ⊢ (UnOp MinusUnOp e1) : TInt
+  | PlusT e1 e2 :
+      Γ ⊢ e1 : TInt ->
+      Γ ⊢ e2 : TInt -> 
+      Γ ⊢ (BinOp PlusOp e1 e2) : TInt
+  | AndT e1 e2 :
+      Γ ⊢ e1 : TBool ->
+      Γ ⊢ e2 : TBool -> 
+      Γ ⊢ (BinOp AndOp e1 e2) : TBool
+  | EqT e1 e2 :
+      Γ ⊢ e1 : TBool ->
+      Γ ⊢ e2 : TBool -> 
+      Γ ⊢ (BinOp EqOp e1 e2) : TBool
+  | IfT e1 e2 e3 τ1 : 
+      Γ ⊢ e1 : TBool ->
+      Γ ⊢ e2 : τ1 -> 
+      Γ ⊢ e3 : τ1 -> 
+      Γ ⊢ (If e1 e2 e3) : τ1    
   | PairT ref e1 e2 τ1 τ2 : 
       Γ ⊢ e1 : τ1 -> 
       Γ ⊢ e2 : τ2 ->
       field_valid τ1 ref -> 
       field_valid τ2 ref ->
       Γ ⊢ (Pair ref e1 e2) : TPair ref τ1 τ2
-  | RecT f x e τ1 τ2 : 
-      (* if giving x the type τ1 in the context resolves the expression, then the function is valid *)
-      (<[ x := τ1 ]> Γ) ⊢ e : τ2 ->
-      Γ ⊢ Rec f x e : TArrow τ1 τ2
+  | FstT e1 ref τ1 τ2 :
+      Γ ⊢ e1 : TPair ref τ1 τ2 ->
+      Γ ⊢ (Fst e1) : τ1  
+  | SndT e1 ref τ1 τ2 :
+      Γ ⊢ e1 : TPair ref τ1 τ2 ->
+      Γ ⊢ (Snd e1) : τ2
+  | ClassT e1 e2 τ1 τ2 : 
+      Γ ⊢ e1 : τ1 -> 
+      Γ ⊢ e2 : τ2 -> 
+      field_valid τ1 false -> 
+      field_valid τ2 false -> 
+      Γ ⊢ (Class e1 e2) : TClass τ1 τ2
 (* e has type tau *)
 where "Γ ⊢ e : τ" := (has_type Γ e τ).
 
