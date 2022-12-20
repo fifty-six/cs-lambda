@@ -1,0 +1,78 @@
+namespace A;
+
+static class Program {
+    (() -> ref int) M() {
+        // on the stack here
+        int a = 37;
+        ref int b = ref a;
+        // fine in *our language*, not in C#.
+        ref int M_() {
+            return b;
+        }
+
+        return M_;
+    }
+}
+
+let M = (
+    let a = 37        in
+    let ref b = ref a in 
+    let M_ () = b     in
+    M_
+)
+in M ()
+
+function has ref_to_escape (...)
+
+M_<2> is safe to escape to 2.
+
+2 > 1, so we can't return something of lifetime 2.
+
+
+- structs/primitives/classes are safe to escape \infty
+
+- function has safe_to_escape corresponding to the biggest safe to escape of the variables in its scope
+
+(): lifetime \infty
+a has lifetime 1
+
+f_b starts the scope with lifetime 2
+b has lifetime 2
+
+we're trying to return something of lifetime 2, from the thing *starting* lifetime 2
+so that's why it's illegal - it's returning something that is scoped to itself kinda deal
+
+< the start of our scope, then it's legal
+>= of the start of our scope, then it's illegal
+
+M_ starts the lifetime 3
+M_ [b] -> max(safe_to_escape(b)) -> 2
+
+
+// this should make sense, ideally
+f(g)
+
+Add((...)(), (...)())
+
+
+    Program(...., Main() {
+            ...
+            })
+
+Block([exprs], ...) : type of the last expr
+                    (1), (2)
+                    [Assgn(..), Assgn(..)]
+
+{
+    a = 3;
+    b = ref a;
+
+    // bad
+    return (..)
+
+
+(\M: _ -> 
+  (1)  (\f_a: a: int ->
+  (2)  (\f_b (b: ref int) ->
+  (3)  (\M_ () -> b))(ref a))(37)
+) ()
