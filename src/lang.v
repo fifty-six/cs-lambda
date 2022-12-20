@@ -169,6 +169,9 @@ Inductive has_type (Γ: gmap binder type) : expr -> type -> Prop :=
   | SndT e1 ref τ1 τ2 :
       Γ ⊢ e1 : TPair ref τ1 τ2 ->
       Γ ⊢ (Snd e1) : τ2
+  | RefT x τ1 :
+      Γ ⊢ (Var x) : τ1 -> 
+      Γ ⊢ (Ref (Var x)) : TRef τ1
   | ClassT e1 e2 τ1 τ2 : 
       Γ ⊢ e1 : τ1 -> 
       Γ ⊢ e2 : τ2 -> 
